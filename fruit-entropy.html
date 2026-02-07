@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fruit Entropy - LLM Diversity Challenge</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Fredoka', sans-serif;
+    }
+    #root {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // Lucide icon components (simplified)
+    const Sparkles = ({ className, size = 24 }) => (
+      <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 3L14.5 8.5L20 11L14.5 13.5L12 19L9.5 13.5L4 11L9.5 8.5L12 3Z"/>
+        <path d="M20 3v4"/>
+        <path d="M22 5h-4"/>
+        <path d="M4 17v2"/>
+        <path d="M5 18H3"/>
+      </svg>
+    );
+
+    const Trophy = ({ className, size = 24 }) => (
+      <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/>
+        <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
+        <path d="M4 22h16"/>
+        <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/>
+        <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/>
+        <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>
+      </svg>
+    );
+
+    const Zap = ({ size = 24 }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+      </svg>
+    );
+
+    const Apple = ({ className }) => (
+      <svg className={className} width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06Z"/>
+        <path d="M10 2c1 .5 2 2 2 5"/>
+      </svg>
+    );
+
+    function FruitEntropy() {
+      const [apiKey, setApiKey] = useState('');
+      const [prompt, setPrompt] = useState('');
+      const [isRunning, setIsRunning] = useState(false);
+      const [score, setScore] = useState(null);
+      const [fruits, setFruits] = useState([]);
+      const [leaderboard, setLeaderboard] = useState([]);
+      const [error, setError] = useState('');
+      const [progress, setProgress] = useState(0);
+
+      // Load from localStorage on mount
+      useEffect(() => {
+        loadLeaderboard();
+        loadApiKey();
+      }, []);
+
+      const loadApiKey = () => {
+        try {
+          const saved = localStorage.getItem('groq_api_key');
+          if (saved) {
+            setApiKey(saved);
+          }
+        } catch (err) {
+          console.log('No saved API key');
+        }
+      };
+
+      const saveApiKey = (key) => {
+        try {
+          if (key.trim()) {
+            localStorage.setItem('groq_api_key', key.trim());
+          }
+        } catch (err) {
+          console.log('Error saving API key:', err);
+        }
+      };
+
+      const loadLeaderboard = () => {
+        try {
+          const saved = localStorage.getItem('fruit_leaderboard');
+          if (saved) {
+            const entries = JSON.parse(saved);
+            entries.sort((a, b) => b.score - a.score);
+            setLeaderboard(entries.slice(0, 10));
+          }
+        } catch (err) {
+          console.log('Leaderboard loading error:', err);
+        }
+      };
+
+      const saveToLeaderboard = (entry) => {
+        try {
+          const saved = localStorage.getItem('fruit_leaderboard');
+          const entries = saved ? JSON.parse(saved) : [];
+          entries.push(entry);
+          entries.sort((a, b) => b.score - a.score);
+          localStorage.setItem('fruit_leaderboard', JSON.stringify(entries.slice(0, 50)));
+          loadLeaderboard();
+        } catch (err) {
+          console.log('Error saving to leaderboard:', err);
+        }
+      };
+
+      const KNOWN_FRUITS = new Set([
+        'apple', 'apricot', 'avocado', 'banana', 'blackberry', 'blueberry', 
+        'boysenberry', 'cherry', 'clementine', 'coconut', 'cranberry', 'cucumber',
+        'currant', 'date', 'dragonfruit', 'durian', 'elderberry', 'fig', 'gooseberry',
+        'grape', 'grapefruit', 'guava', 'honeydew', 'jackfruit', 'kiwi', 'kumquat',
+        'lemon', 'lime', 'lychee', 'mandarin', 'mango', 'mangosteen', 'melon',
+        'mulberry', 'nectarine', 'orange', 'papaya', 'passionfruit', 'peach', 'pear',
+        'persimmon', 'pineapple', 'plum', 'pomegranate', 'pomelo', 'quince', 'raspberry',
+        'rambutan', 'starfruit', 'strawberry', 'tangerine', 'watermelon'
+      ]);
+
+      const validateFruit = (text) => {
+        const normalized = text.toLowerCase().trim().replace(/[^a-z]/g, '');
+        return KNOWN_FRUITS.has(normalized) ? normalized : null;
+      };
+
+      const runEntropy = async () => {
+        if (!apiKey.trim()) {
+          setError('Please enter your Groq API key');
+          return;
+        }
+
+        if (!prompt.trim()) {
+          setError('Please enter a prompt');
+          return;
+        }
+
+        setIsRunning(true);
+        setError('');
+        setScore(null);
+        setFruits([]);
+        setProgress(0);
+
+        try {
+          const BATCH_SIZE = 10;
+          const NUM_CALLS = 50;
+          const allFruits = [];
+          
+          for (let batch = 0; batch < NUM_CALLS / BATCH_SIZE; batch++) {
+            const promises = Array(BATCH_SIZE).fill(0).map(() => 
+              fetch("https://api.groq.com/openai/v1/chat/completions", {
+                method: "POST",
+                headers: { 
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${apiKey.trim()}`
+                },
+                body: JSON.stringify({
+                  model: "gemma2-9b-it",
+                  messages: [{
+                    role: "user",
+                    content: `${prompt}\n\nRespond with ONLY a single fruit name, nothing else.`
+                  }],
+                  temperature: 1.0,
+                  max_tokens: 50
+                })
+              })
+              .then(res => {
+                if (!res.ok) {
+                  console.error('API error:', res.status, res.statusText);
+                }
+                return res.json();
+              })
+              .then(data => {
+                if (data.error) {
+                  console.error('Groq API error:', data.error);
+                  return null;
+                }
+                if (data.choices && data.choices[0] && data.choices[0].message) {
+                  return data.choices[0].message.content.trim();
+                }
+                return null;
+              })
+              .catch(err => {
+                console.error('Fetch error:', err);
+                return null;
+              })
+            );
+
+            const batchResults = await Promise.all(promises);
+            allFruits.push(...batchResults.filter(r => r !== null));
+            setProgress(((batch + 1) * BATCH_SIZE / NUM_CALLS) * 100);
+          }
+
+          // Check if we got any responses at all
+          if (allFruits.length === 0) {
+            setError('No responses received from Groq API. Check your API key and browser console for errors.');
+            return;
+          }
+
+          // Validate and deduplicate
+          const validFruits = allFruits
+            .map(validateFruit)
+            .filter(f => f !== null);
+          
+          const uniqueFruits = [...new Set(validFruits)];
+          const finalScore = uniqueFruits.length;
+
+          setFruits(uniqueFruits);
+          setScore(finalScore);
+
+          // Save to leaderboard
+          if (finalScore > 0) {
+            const entry = {
+              score: finalScore,
+              prompt: prompt.trim(),
+              timestamp: Date.now(),
+              fruitCount: validFruits.length,
+              uniqueCount: finalScore
+            };
+
+            saveToLeaderboard(entry);
+          }
+
+        } catch (err) {
+          setError('Error running entropy test: ' + err.message);
+        } finally {
+          setIsRunning(false);
+          setProgress(0);
+        }
+      };
+
+      return (
+        <div className="fruit-entropy">
+          <div className="cosmic-bg"></div>
+          <div className="noise-overlay"></div>
+          
+          <div className="container">
+            <header className="header">
+              <div className="logo-container">
+                <Apple className="logo-icon" />
+                <h1 className="title">
+                  <span className="title-fruit">Fruit</span>
+                  <span className="title-entropy">Entropy</span>
+                </h1>
+              </div>
+              <p className="subtitle">
+                Maximize diversity. Challenge Groq to generate 50 unique fruits.
+              </p>
+            </header>
+
+            <div className="main-content">
+              <div className="api-key-section">
+                <label htmlFor="api-key" className="api-key-label">
+                  Groq API Key
+                  <a 
+                    href="https://console.groq.com/keys" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="api-key-link"
+                  >
+                    Get your key →
+                  </a>
+                </label>
+                <input
+                  id="api-key"
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => {
+                    setApiKey(e.target.value);
+                    saveApiKey(e.target.value);
+                  }}
+                  placeholder="gsk_..."
+                  className="api-key-input"
+                />
+              </div>
+
+              <div className="input-section">
+                <div className="input-wrapper">
+                  <Sparkles className="input-icon" />
+                  <input
+                    type="text"
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && !isRunning && runEntropy()}
+                    placeholder="Enter your fruit prompt..."
+                    disabled={isRunning}
+                    className="prompt-input"
+                  />
+                </div>
+                
+                <button 
+                  onClick={runEntropy} 
+                  disabled={isRunning || !prompt.trim() || !apiKey.trim()}
+                  className="run-button"
+                >
+                  {isRunning ? (
+                    <>
+                      <div className="spinner"></div>
+                      Running... {Math.round(progress)}%
+                    </>
+                  ) : (
+                    <>
+                      <Zap size={20} />
+                      Run Entropy
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {error && (
+                <div className="error-message">
+                  {error}
+                </div>
+              )}
+
+              {score !== null && (
+                <div className="score-reveal">
+                  <div className="score-label">Entropy Score</div>
+                  <div className="score-value">{score}</div>
+                  <div className="score-detail">
+                    {fruits.length} unique {fruits.length === 1 ? 'fruit' : 'fruits'} discovered
+                  </div>
+                  
+                  {fruits.length > 0 && (
+                    <div className="fruit-cloud">
+                      {fruits.sort().map((fruit, i) => (
+                        <span key={i} className="fruit-tag" style={{
+                          animationDelay: `${i * 0.03}s`
+                        }}>
+                          {fruit}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="leaderboard">
+                <div className="leaderboard-header">
+                  <Trophy className="trophy-icon" />
+                  <h2>Leaderboard</h2>
+                </div>
+                
+                {leaderboard.length === 0 ? (
+                  <div className="empty-state">
+                    Be the first to set a score!
+                  </div>
+                ) : (
+                  <div className="leaderboard-list">
+                    {leaderboard.map((entry, index) => (
+                      <div key={index} className="leaderboard-item">
+                        <div className="rank">#{index + 1}</div>
+                        <div className="entry-details">
+                          <div className="entry-prompt">{entry.prompt}</div>
+                          <div className="entry-meta">
+                            {entry.uniqueCount} unique from {entry.fruitCount} responses
+                          </div>
+                        </div>
+                        <div className="entry-score">{entry.score}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <style>{`
+            .fruit-entropy {
+              min-height: 100vh;
+              background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+              position: relative;
+              overflow-x: hidden;
+              font-family: 'Fredoka', sans-serif;
+            }
+
+            .cosmic-bg {
+              position: fixed;
+              top: 0;
+              left: 0;
+              width: 100%;
+              height: 100%;
+              background: 
+                radial-gradient(circle at 20% 50%, rgba(255, 107, 107, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 80% 30%, rgba(132, 250, 176, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 40% 80%, rgba(251, 197, 49, 0.3) 0%, transparent 50%);
+              animation: cosmic-drift 20s ease-in-out infinite;
+            }
+
+            @keyframes cosmic-drift {
+              0%, 100% { transform: translate(0, 0) scale(1); }
+              33% { transform: translate(30px, -30px) scale(1.1); }
+              66% { transform: translate(-30px, 30px) scale(0.9); }
+            }
+
+            .noise-overlay {
+              position: fixed;
+              top: 0;
+              left: 0;
+              width: 100%;
+              height: 100%;
+              background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+              pointer-events: none;
+              opacity: 0.6;
+            }
+
+            .container {
+              position: relative;
+              max-width: 900px;
+              margin: 0 auto;
+              padding: 60px 24px;
+            }
+
+            .header {
+              text-align: center;
+              margin-bottom: 60px;
+            }
+
+            .logo-container {
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              gap: 16px;
+              margin-bottom: 16px;
+            }
+
+            .logo-icon {
+              width: 48px;
+              height: 48px;
+              color: #fff;
+              filter: drop-shadow(0 4px 12px rgba(255, 255, 255, 0.3));
+              animation: float 3s ease-in-out infinite;
+            }
+
+            @keyframes float {
+              0%, 100% { transform: translateY(0px) rotate(0deg); }
+              50% { transform: translateY(-10px) rotate(5deg); }
+            }
+
+            .title {
+              font-size: 64px;
+              font-weight: 700;
+              margin: 0;
+              display: flex;
+              gap: 16px;
+              align-items: baseline;
+            }
+
+            .title-fruit {
+              color: #fff;
+              text-shadow: 
+                0 2px 10px rgba(255, 255, 255, 0.5),
+                0 0 30px rgba(255, 107, 107, 0.5);
+              animation: glow-fruit 2s ease-in-out infinite alternate;
+            }
+
+            .title-entropy {
+              color: #ffd700;
+              text-shadow: 
+                0 2px 10px rgba(255, 215, 0, 0.5),
+                0 0 30px rgba(251, 197, 49, 0.5);
+              animation: glow-entropy 2s ease-in-out infinite alternate;
+              animation-delay: 0.5s;
+            }
+
+            @keyframes glow-fruit {
+              from { text-shadow: 0 2px 10px rgba(255, 255, 255, 0.5), 0 0 30px rgba(255, 107, 107, 0.5); }
+              to { text-shadow: 0 2px 20px rgba(255, 255, 255, 0.8), 0 0 50px rgba(255, 107, 107, 0.8); }
+            }
+
+            @keyframes glow-entropy {
+              from { text-shadow: 0 2px 10px rgba(255, 215, 0, 0.5), 0 0 30px rgba(251, 197, 49, 0.5); }
+              to { text-shadow: 0 2px 20px rgba(255, 215, 0, 0.8), 0 0 50px rgba(251, 197, 49, 0.8); }
+            }
+
+            .subtitle {
+              font-size: 20px;
+              color: rgba(255, 255, 255, 0.9);
+              font-weight: 400;
+              margin: 0;
+            }
+
+            .main-content {
+              background: rgba(255, 255, 255, 0.95);
+              border-radius: 32px;
+              padding: 48px;
+              box-shadow: 
+                0 20px 60px rgba(0, 0, 0, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.8);
+              backdrop-filter: blur(10px);
+            }
+
+            .api-key-section {
+              margin-bottom: 32px;
+              padding-bottom: 32px;
+              border-bottom: 2px solid #f0f0f0;
+            }
+
+            .api-key-label {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              font-size: 14px;
+              font-weight: 600;
+              color: #666;
+              margin-bottom: 12px;
+              text-transform: uppercase;
+              letter-spacing: 1px;
+            }
+
+            .api-key-link {
+              font-size: 13px;
+              color: #764ba2;
+              text-decoration: none;
+              font-weight: 600;
+              transition: color 0.2s;
+              text-transform: none;
+              letter-spacing: 0;
+            }
+
+            .api-key-link:hover {
+              color: #667eea;
+            }
+
+            .api-key-input {
+              width: 100%;
+              padding: 14px 18px;
+              font-size: 15px;
+              font-family: 'JetBrains Mono', monospace;
+              border: 2px solid #e0e0e0;
+              border-radius: 12px;
+              outline: none;
+              transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+              background: white;
+              box-sizing: border-box;
+            }
+
+            .api-key-input:focus {
+              border-color: #764ba2;
+              box-shadow: 0 0 0 3px rgba(118, 75, 162, 0.1);
+            }
+
+            .input-section {
+              display: flex;
+              gap: 16px;
+              margin-bottom: 32px;
+            }
+
+            .input-wrapper {
+              flex: 1;
+              position: relative;
+            }
+
+            .input-icon {
+              position: absolute;
+              left: 20px;
+              top: 50%;
+              transform: translateY(-50%);
+              color: #764ba2;
+              width: 24px;
+              height: 24px;
+              pointer-events: none;
+            }
+
+            .prompt-input {
+              width: 100%;
+              padding: 18px 20px 18px 56px;
+              font-size: 18px;
+              font-family: 'Fredoka', sans-serif;
+              font-weight: 500;
+              border: 3px solid #e0e0e0;
+              border-radius: 16px;
+              outline: none;
+              transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+              background: white;
+              box-sizing: border-box;
+            }
+
+            .prompt-input:focus {
+              border-color: #764ba2;
+              box-shadow: 0 0 0 4px rgba(118, 75, 162, 0.1);
+              transform: translateY(-2px);
+            }
+
+            .prompt-input:disabled {
+              opacity: 0.6;
+              cursor: not-allowed;
+            }
+
+            .run-button {
+              padding: 18px 36px;
+              font-size: 18px;
+              font-family: 'Fredoka', sans-serif;
+              font-weight: 600;
+              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+              color: white;
+              border: none;
+              border-radius: 16px;
+              cursor: pointer;
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+              box-shadow: 0 4px 16px rgba(118, 75, 162, 0.4);
+              white-space: nowrap;
+            }
+
+            .run-button:hover:not(:disabled) {
+              transform: translateY(-3px);
+              box-shadow: 0 8px 24px rgba(118, 75, 162, 0.5);
+            }
+
+            .run-button:active:not(:disabled) {
+              transform: translateY(-1px);
+            }
+
+            .run-button:disabled {
+              opacity: 0.7;
+              cursor: not-allowed;
+            }
+
+            .spinner {
+              width: 20px;
+              height: 20px;
+              border: 3px solid rgba(255, 255, 255, 0.3);
+              border-top-color: white;
+              border-radius: 50%;
+              animation: spin 0.8s linear infinite;
+            }
+
+            @keyframes spin {
+              to { transform: rotate(360deg); }
+            }
+
+            .error-message {
+              padding: 16px 24px;
+              background: #fee;
+              border: 2px solid #fcc;
+              border-radius: 12px;
+              color: #c33;
+              font-weight: 500;
+              margin-bottom: 24px;
+            }
+
+            .score-reveal {
+              text-align: center;
+              padding: 48px 32px;
+              background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+              border-radius: 24px;
+              margin-bottom: 48px;
+              animation: reveal 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+              box-shadow: 
+                0 12px 40px rgba(245, 87, 108, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+            }
+
+            @keyframes reveal {
+              from {
+                opacity: 0;
+                transform: scale(0.9) translateY(20px);
+              }
+              to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+              }
+            }
+
+            .score-label {
+              font-size: 16px;
+              color: rgba(255, 255, 255, 0.9);
+              font-weight: 600;
+              text-transform: uppercase;
+              letter-spacing: 2px;
+              margin-bottom: 12px;
+            }
+
+            .score-value {
+              font-size: 96px;
+              font-weight: 700;
+              color: white;
+              text-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+              line-height: 1;
+              margin-bottom: 12px;
+            }
+
+            .score-detail {
+              font-size: 18px;
+              color: rgba(255, 255, 255, 0.95);
+              font-weight: 500;
+            }
+
+            .fruit-cloud {
+              margin-top: 32px;
+              display: flex;
+              flex-wrap: wrap;
+              gap: 10px;
+              justify-content: center;
+            }
+
+            .fruit-tag {
+              padding: 8px 16px;
+              background: rgba(255, 255, 255, 0.95);
+              border-radius: 20px;
+              font-size: 14px;
+              font-weight: 600;
+              color: #764ba2;
+              font-family: 'JetBrains Mono', monospace;
+              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+              animation: pop-in 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            }
+
+            @keyframes pop-in {
+              from {
+                opacity: 0;
+                transform: scale(0);
+              }
+              to {
+                opacity: 1;
+                transform: scale(1);
+              }
+            }
+
+            .leaderboard {
+              margin-top: 48px;
+            }
+
+            .leaderboard-header {
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              margin-bottom: 24px;
+              padding-bottom: 16px;
+              border-bottom: 3px solid #f0f0f0;
+            }
+
+            .trophy-icon {
+              width: 32px;
+              height: 32px;
+              color: #ffd700;
+              filter: drop-shadow(0 2px 8px rgba(255, 215, 0, 0.4));
+            }
+
+            .leaderboard-header h2 {
+              font-size: 32px;
+              font-weight: 700;
+              margin: 0;
+              color: #333;
+            }
+
+            .empty-state {
+              text-align: center;
+              padding: 60px 20px;
+              color: #999;
+              font-size: 18px;
+              font-weight: 500;
+            }
+
+            .leaderboard-list {
+              display: flex;
+              flex-direction: column;
+              gap: 16px;
+            }
+
+            .leaderboard-item {
+              display: flex;
+              align-items: center;
+              gap: 20px;
+              padding: 20px;
+              background: white;
+              border: 2px solid #f0f0f0;
+              border-radius: 16px;
+              transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+
+            .leaderboard-item:hover {
+              border-color: #764ba2;
+              box-shadow: 0 4px 16px rgba(118, 75, 162, 0.15);
+              transform: translateX(4px);
+            }
+
+            .rank {
+              font-size: 24px;
+              font-weight: 700;
+              color: #764ba2;
+              min-width: 50px;
+              text-align: center;
+            }
+
+            .entry-details {
+              flex: 1;
+              min-width: 0;
+            }
+
+            .entry-prompt {
+              font-size: 18px;
+              font-weight: 600;
+              color: #333;
+              margin-bottom: 6px;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            .entry-meta {
+              font-size: 14px;
+              color: #999;
+              font-family: 'JetBrains Mono', monospace;
+            }
+
+            .entry-score {
+              font-size: 36px;
+              font-weight: 700;
+              color: #f5576c;
+              min-width: 60px;
+              text-align: right;
+            }
+
+            @media (max-width: 768px) {
+              .container {
+                padding: 32px 16px;
+              }
+
+              .title {
+                font-size: 42px;
+                flex-direction: column;
+                gap: 0;
+              }
+
+              .subtitle {
+                font-size: 16px;
+              }
+
+              .main-content {
+                padding: 24px;
+              }
+
+              .input-section {
+                flex-direction: column;
+              }
+
+              .score-value {
+                font-size: 64px;
+              }
+
+              .leaderboard-item {
+                padding: 16px;
+              }
+
+              .entry-score {
+                font-size: 28px;
+              }
+            }
+          `}</style>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<FruitEntropy />, document.getElementById('root'));
+  </script>
+</body>
+</html>
