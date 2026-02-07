@@ -160,11 +160,17 @@
         setProgress(0);
 
         try {
-          const BATCH_SIZE = 10;
+          const BATCH_SIZE = 5; // Reduced from 10 to avoid rate limits
           const NUM_CALLS = 50;
+          const BATCH_DELAY = 2000; // 2 seconds between batches
           const allFruits = [];
           
           for (let batch = 0; batch < NUM_CALLS / BATCH_SIZE; batch++) {
+            // Add delay between batches (except first one)
+            if (batch > 0) {
+              await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
+            }
+            
             const promises = Array(BATCH_SIZE).fill(0).map(() => 
               fetch("https://openrouter.ai/api/v1/chat/completions", {
                 method: "POST",
@@ -184,17 +190,26 @@
                   max_tokens: 50
                 })
               })
-              .then(res => {
+              .then(async res => {
+                const text = await res.text();
+                console.log('API Response:', text);
+                
                 if (!res.ok) {
-                  console.error('API error:', res.status, res.statusText);
-                  throw new Error(`API returned ${res.status}: ${res.statusText}`);
+                  console.error('API error:', res.status, res.statusText, text);
+                  let errorMsg = `API returned ${res.status}`;
+                  try {
+                    const errorData = JSON.parse(text);
+                    errorMsg += `: ${errorData.error?.message || text}`;
+                  } catch {
+                    errorMsg += `: ${text}`;
+                  }
+                  throw new Error(errorMsg);
                 }
-                return res.json();
-              })
-              .then(data => {
+                
+                const data = JSON.parse(text);
                 if (data.error) {
                   console.error('OpenRouter API error:', data.error);
-                  throw new Error(data.error.message || 'API error');
+                  throw new Error(data.error.message || JSON.stringify(data.error));
                 }
                 if (data.choices && data.choices[0] && data.choices[0].message) {
                   return data.choices[0].message.content.trim();
@@ -215,7 +230,7 @@
 
           // Check if we got any responses at all
           if (allFruits.length === 0) {
-            setError('No responses received from API. Please check your API key and try again.');
+            setError('No responses received from API. Common issues: 1) Invalid API key format (should start with sk-or-v1-), 2) Need to add payment method on OpenRouter (even for free tier), 3) Insufficient credits. Check browser console (F12) for detailed error messages.');
             return;
           }
 
@@ -295,7 +310,7 @@
                   className="api-key-input"
                 />
                 <div className="hosting-note">
-                  ✨ Using OpenRouter with free Llama 3.2 model - no backend needed!
+                  ✨ Using OpenRouter with free Llama 3.2 model. Requests are throttled to avoid rate limits (~20 seconds total).
                 </div>
               </div>
 
