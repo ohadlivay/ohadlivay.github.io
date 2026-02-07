@@ -177,7 +177,7 @@
             }
 
             const promises = Array(BATCH_SIZE).fill(0).map(() =>
-              fetch("https://openrouter.ai/api/v1/chat/completions", {
+              fetch("https://cors-anywhere.herokuapp.com/https://openrouter.ai/api/v1/chat/completions", {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
