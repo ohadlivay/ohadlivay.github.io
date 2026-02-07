@@ -81,7 +81,7 @@
 
       const loadApiKey = () => {
         try {
-          const saved = localStorage.getItem('groq_api_key');
+          const saved = localStorage.getItem('openrouter_api_key');
           if (saved) {
             setApiKey(saved);
           }
@@ -93,7 +93,7 @@
       const saveApiKey = (key) => {
         try {
           if (key.trim()) {
-            localStorage.setItem('groq_api_key', key.trim());
+            localStorage.setItem('openrouter_api_key', key.trim());
           }
         } catch (err) {
           console.log('Error saving API key:', err);
@@ -144,7 +144,7 @@
 
       const runEntropy = async () => {
         if (!apiKey.trim()) {
-          setError('Please enter your Groq API key');
+          setError('Please enter your OpenRouter API key');
           return;
         }
 
@@ -166,14 +166,16 @@
           
           for (let batch = 0; batch < NUM_CALLS / BATCH_SIZE; batch++) {
             const promises = Array(BATCH_SIZE).fill(0).map(() => 
-              fetch("https://api.groq.com/openai/v1/chat/completions", {
+              fetch("https://openrouter.ai/api/v1/chat/completions", {
                 method: "POST",
                 headers: { 
                   "Content-Type": "application/json",
-                  "Authorization": `Bearer ${apiKey.trim()}`
+                  "Authorization": `Bearer ${apiKey.trim()}`,
+                  "HTTP-Referer": window.location.href,
+                  "X-Title": "Fruit Entropy"
                 },
                 body: JSON.stringify({
-                  model: "gemma2-9b-it",
+                  model: "meta-llama/llama-3.2-3b-instruct:free",
                   messages: [{
                     role: "user",
                     content: `${prompt}\n\nRespond with ONLY a single fruit name, nothing else.`
@@ -185,13 +187,14 @@
               .then(res => {
                 if (!res.ok) {
                   console.error('API error:', res.status, res.statusText);
+                  throw new Error(`API returned ${res.status}: ${res.statusText}`);
                 }
                 return res.json();
               })
               .then(data => {
                 if (data.error) {
-                  console.error('Groq API error:', data.error);
-                  return null;
+                  console.error('OpenRouter API error:', data.error);
+                  throw new Error(data.error.message || 'API error');
                 }
                 if (data.choices && data.choices[0] && data.choices[0].message) {
                   return data.choices[0].message.content.trim();
@@ -199,19 +202,20 @@
                 return null;
               })
               .catch(err => {
-                console.error('Fetch error:', err);
-                return null;
+                console.error('Fetch error:', err.message);
+                throw err;
               })
             );
 
-            const batchResults = await Promise.all(promises);
-            allFruits.push(...batchResults.filter(r => r !== null));
+            const batchResults = await Promise.all(promises.map(p => p.catch(e => null)));
+            const successfulResults = batchResults.filter(r => r !== null);
+            allFruits.push(...successfulResults);
             setProgress(((batch + 1) * BATCH_SIZE / NUM_CALLS) * 100);
           }
 
           // Check if we got any responses at all
           if (allFruits.length === 0) {
-            setError('No responses received from Groq API. Check your API key and browser console for errors.');
+            setError('No responses received from API. Please check your API key and try again.');
             return;
           }
 
@@ -262,21 +266,21 @@
                 </h1>
               </div>
               <p className="subtitle">
-                Maximize diversity. Challenge Groq to generate 50 unique fruits.
+                Maximize diversity. Challenge an LLM to generate 50 unique fruits.
               </p>
             </header>
 
             <div className="main-content">
               <div className="api-key-section">
                 <label htmlFor="api-key" className="api-key-label">
-                  Groq API Key
+                  OpenRouter API Key
                   <a 
-                    href="https://console.groq.com/keys" 
+                    href="https://openrouter.ai/keys" 
                     target="_blank" 
                     rel="noopener noreferrer"
                     className="api-key-link"
                   >
-                    Get your key →
+                    Get free key →
                   </a>
                 </label>
                 <input
@@ -287,9 +291,12 @@
                     setApiKey(e.target.value);
                     saveApiKey(e.target.value);
                   }}
-                  placeholder="gsk_..."
+                  placeholder="sk-or-v1-..."
                   className="api-key-input"
                 />
+                <div className="hosting-note">
+                  ✨ Using OpenRouter with free Llama 3.2 model - no backend needed!
+                </div>
               </div>
 
               <div className="input-section">
@@ -556,6 +563,17 @@
             .api-key-input:focus {
               border-color: #764ba2;
               box-shadow: 0 0 0 3px rgba(118, 75, 162, 0.1);
+            }
+
+            .hosting-note {
+              margin-top: 12px;
+              padding: 12px 16px;
+              background: #e8f5e9;
+              border: 1px solid #81c784;
+              border-radius: 8px;
+              font-size: 13px;
+              color: #2e7d32;
+              line-height: 1.6;
             }
 
             .input-section {
